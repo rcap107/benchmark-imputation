@@ -9,6 +9,8 @@ import os.path as osp
 import os
 from tqdm import tqdm
 from bi_utils import *
+import json
+
 
 def convert_dirty_to_hivae():
     pass
@@ -34,6 +36,37 @@ def convert_clean_to_holoclean(df_path):
             for col in df.columns:
                 s = f'{rid},{col},{df.loc[rid, col]}\n'
                 fp.write(s)
+
+
+def prepare_metadata_holoclean(df_raw_path, numerical_columns=[]):
+    '''
+    The run_holoclean.py script requires info to be present in the meta_data.py script.
+    Metadata are hardcoded as dictionaries in the script.
+
+    This function outputs a json file that should be copied in the metadaa file.
+    :return:
+    '''
+
+    df_dirty = pd.read_csv(df_raw_path)
+    df_raw_name, ext = osp.splitext(osp.basename(df_raw_path))
+
+    if not numerical_columns:
+        num_attrs = df_dirty.select_dtypes(include='number').columns.tolist()
+    else:
+        num_attrs = numerical_columns
+
+    target_dict = {
+        'target_attrs': df_dirty.columns.tolist(),
+        'num_attrs': num_attrs,
+        'num_attr_groups': [[_] for _ in  num_attrs],
+        'data_dir': f'testdata/raw/{df_raw_name}',
+        'raw_prefix': df_raw_name,
+        'clean_prefix': df_raw_name.split('_', maxsplit=1)[0],
+        'dc_file': None,
+        'hc_batch': 32,
+        'multiple_correct': False,
+    }
+    json.dump(target_dict, open(osp.join('variants/holoclean/json/', f'{df_raw_name}.json'), 'w'), indent=4)
 
 
 def convert_to_number(df):
@@ -113,10 +146,10 @@ if __name__ == '__main__':
     clean_base_dir = 'data/clean'
     dirty_base_dir = 'data/dirty'
 
-    for clean_df_path in os.listdir(clean_base_dir):
-        print(f'Working on dataset {clean_df_path}')
-        convert_clean_to_holoclean(osp.join(clean_base_dir, clean_df_path))
+    # for clean_df_path in os.listdir(clean_base_dir):
+    #     print(f'Working on dataset {clean_df_path}')
+    #     convert_clean_to_holoclean(osp.join(clean_base_dir, clean_df_path))
 
-    for dirty_df in os.listdir(dirty_base_dir):
-        pass
+    for dirty_df_path in os.listdir(dirty_base_dir):
+        prepare_metadata_holoclean(osp.join(dirty_base_dir,dirty_df_path))
 

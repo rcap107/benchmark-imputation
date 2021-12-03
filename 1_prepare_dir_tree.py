@@ -16,12 +16,15 @@ def dirtree_misf():
     pass
 
 def dirtree_grimp():
-    pass
+    os.makedirs('variants/grimp/data/clean', exist_ok=True)
+    os.makedirs('variants/grimp/data/dirty', exist_ok=True)
+
 
 def dirtree_holoclean():
     os.makedirs('variants/holoclean/testdata/raw', exist_ok=True)
-    os.makedirs('variants/holoclean/dump')
+    os.makedirs('variants/holoclean/dump', exist_ok=True)
 
 
 if __name__ == '__main__':
     dirtree_holoclean()
+    dirtree_grimp()
