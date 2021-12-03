@@ -13,7 +13,9 @@ import argparse
 
 
 def dirtree_misf():
-    pass
+    os.makedirs('variants/misf/data/clean', exist_ok=True)
+    os.makedirs('variants/misf/data/dirty', exist_ok=True)
+
 
 def dirtree_grimp():
     os.makedirs('variants/grimp/data/clean', exist_ok=True)
@@ -23,8 +25,6 @@ def dirtree_grimp():
 def dirtree_holoclean():
     os.makedirs('variants/holoclean/testdata/raw', exist_ok=True)
     os.makedirs('variants/holoclean/dump', exist_ok=True)
+    os.makedirs('variants/holoclean/meta_data', exist_ok=True)
 
 
-if __name__ == '__main__':
-    dirtree_holoclean()
-    dirtree_grimp()

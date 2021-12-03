@@ -8,21 +8,81 @@ import pandas as pd
 import os.path as osp
 import os
 from tqdm import tqdm
-from bi_utils import *
+from src.utils import *
 import json
+from shutil import copyfile
 
 
-def convert_dirty_to_hivae():
-    pass
+def prepare_holoclean():
+    os.makedirs('variants/holoclean/testdata/raw', exist_ok=True)
+    os.makedirs('variants/holoclean/dump', exist_ok=True)
+    os.makedirs('variants/holoclean/meta_data', exist_ok=True)
 
-def convert_clean_to_hivae():
-    pass
+    for f in os.listdir(CLEAN_DS_FOLDER):
+        basename, ext = osp.splitext(f)
+        os.makedirs(osp.join(HOLOCLEAN_RAW_FOLDER, basename), exist_ok=True)
+        tgt_dir = osp.join(CLEAN_DS_FOLDER,f)
+        prepare_clean_holoclean(tgt_dir)
 
-def convert_dirty_to_holoclean():
-    pass
+    for f in os.listdir(DIRTY_DS_FOLDER):
+        basename = get_name(f)
+        orig_dataset = basename.split('_', maxsplit=1)[0]
+        # Create a dir for every dirty dataset
+        os.makedirs(osp.join(HOLOCLEAN_RAW_FOLDER, basename), exist_ok=True)
+
+        # Copy the dataset in the dir
+        src_file = osp.join(DIRTY_DS_FOLDER, f)
+        dst_file = osp.join(HOLOCLEAN_RAW_FOLDER, basename, f)
+        copyfile(src_file, dst_file)
+
+        # Prepare metadata
+        prepare_metadata_holoclean(src_file)
+
+        # Copy the ground truth file
+        src_file = osp.join(HOLOCLEAN_RAW_FOLDER, orig_dataset, orig_dataset + '_clean.csv')
+        dst_file = osp.join(HOLOCLEAN_RAW_FOLDER, basename, orig_dataset + '_clean.csv')
+        copyfile(src_file, dst_file)
 
 
-def convert_clean_to_holoclean(df_path):
+def prepare_misf():
+    os.makedirs('variants/misf/data/clean', exist_ok=True)
+    os.makedirs('variants/misf/data/dirty', exist_ok=True)
+
+    for f in os.listdir(CLEAN_DS_FOLDER):
+        # basename, ext = osp.splitext(f)
+        src_file = osp.join(CLEAN_DS_FOLDER, f)
+        dst_dir = osp.join(MISF_FOLDER, 'data/clean')
+        dst_file = osp.join(dst_dir, f)
+        copyfile(src_file, dst_file)
+
+    for f in os.listdir(DIRTY_DS_FOLDER):
+        # basename = get_name(f)
+        src_file = osp.join(DIRTY_DS_FOLDER, f)
+        dst_dir = osp.join(MISF_FOLDER, 'data/dirty')
+        dst_file = osp.join(dst_dir, f)
+        copyfile(src_file, dst_file)
+
+
+def prepare_grimp():
+    os.makedirs('variants/grimp/data/clean', exist_ok=True)
+    os.makedirs('variants/grimp/data/dirty', exist_ok=True)
+
+    for f in os.listdir(CLEAN_DS_FOLDER):
+        # basename, ext = osp.splitext(f)
+        src_file = osp.join(CLEAN_DS_FOLDER, f)
+        dst_dir = osp.join(GRIMP_FOLDER, 'data/clean')
+        dst_file = osp.join(dst_dir, f)
+        copyfile(src_file, dst_file)
+
+    for f in os.listdir(DIRTY_DS_FOLDER):
+        # basename = get_name(f)
+        src_file = osp.join(DIRTY_DS_FOLDER, f)
+        dst_dir = osp.join(GRIMP_FOLDER, 'data/dirty')
+        dst_file = osp.join(dst_dir, f)
+        copyfile(src_file, dst_file)
+
+
+def prepare_clean_holoclean(df_path):
     basename = get_name(df_path)
     gt_path = osp.join(HOLOCLEAN_FOLDER, f'testdata/raw/{basename}')
     os.makedirs(gt_path, exist_ok=True)
@@ -38,7 +98,7 @@ def convert_clean_to_holoclean(df_path):
                 fp.write(s)
 
 
-def prepare_metadata_holoclean(df_raw_path, numerical_columns=[]):
+def prepare_metadata_holoclean(df_raw_path, numerical_columns=None):
     '''
     The run_holoclean.py script requires info to be present in the meta_data.py script.
     Metadata are hardcoded as dictionaries in the script.
@@ -46,6 +106,9 @@ def prepare_metadata_holoclean(df_raw_path, numerical_columns=[]):
     This function outputs a json file that should be copied in the metadaa file.
     :return:
     '''
+
+    if numerical_columns is None:
+        numerical_columns = []
 
     df_dirty = pd.read_csv(df_raw_path)
     df_raw_name, ext = osp.splitext(osp.basename(df_raw_path))
@@ -66,7 +129,7 @@ def prepare_metadata_holoclean(df_raw_path, numerical_columns=[]):
         'hc_batch': 32,
         'multiple_correct': False,
     }
-    json.dump(target_dict, open(osp.join('variants/holoclean/json/', f'{df_raw_name}.json'), 'w'), indent=4)
+    json.dump(target_dict, open(osp.join('variants/holoclean/meta_data/', f'{df_raw_name}.json'), 'w'), indent=4)
 
 
 def convert_to_number(df):
@@ -142,14 +205,6 @@ def get_name(df_path):
     return basename
 
 if __name__ == '__main__':
-    # TODO: add parameters
-    clean_base_dir = 'data/clean'
-    dirty_base_dir = 'data/dirty'
-
-    # for clean_df_path in os.listdir(clean_base_dir):
-    #     print(f'Working on dataset {clean_df_path}')
-    #     convert_clean_to_holoclean(osp.join(clean_base_dir, clean_df_path))
-
-    for dirty_df_path in os.listdir(dirty_base_dir):
-        prepare_metadata_holoclean(osp.join(dirty_base_dir,dirty_df_path))
-
+    prepare_holoclean()
+    prepare_misf()
+    prepare_grimp()

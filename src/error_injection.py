@@ -9,7 +9,7 @@ import numpy as np
 from numpy.random import default_rng
 import pandas as pd
 
-from bi_utils import *
+from src.utils import *
 
 class ErrorInjector:
     def __init__(self, df_name, df_clean_path,

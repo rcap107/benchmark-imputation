@@ -8,7 +8,7 @@ Author: Riccardo Cappuzzo
 import pandas as pd
 import os.path as osp
 import os
-from bi_utils import *
+from utils import *
 from tqdm import tqdm
 
 
