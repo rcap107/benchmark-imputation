@@ -118,7 +118,11 @@ class ErrorInjector:
                 m = self._get_mask(_tmp_df, ef)
             _tmp_df[col], injected = self._column_error_injection(_tmp_df[col], m, self.na_value)
             error_count[col] = injected
-            print(f'Column {col}: {injected} errors in {len(_tmp_df[col])} values.')
+            # print(f'Column {col}: {injected} errors in {len(_tmp_df[col])} values.')
+
+        print(f'Dataset: {self.df_name}')
+        print(f'Total injected errors: {_tmp_df.isna().sum().sum()}')
+        print(f'Error fraction: {_tmp_df.isna().sum().sum()/len(_tmp_df.values.ravel())*100:.2f} %')
 
         self.df_dirty = _tmp_df
         return _tmp_df
@@ -129,7 +133,7 @@ class ErrorInjector:
 
     def write_dirty_dataset_on_file(self, tag=None, tag_error_frac=True):
         if self.target_all_columns:
-            output_name = f'{self.df_name}_all_columns'
+            output_name = f'{self.df_name}_allcolumns'
         else:
             output_name = f'{self.df_name}_{"_".join(self.target_columns)}'
         s_tag = ''
@@ -160,7 +164,7 @@ class ErrorInjector:
 
 if __name__ == '__main__':
     df_name = 'bikesdekho'
-    df_clean_path = osp.join(CLEAN_DS_FOLDER, df_name+'.csv')
+    df_clean_path = osp.join(osp.realpath(CLEAN_DS_FOLDER), df_name+'.csv')
 
     ei = ErrorInjector(df_name, df_clean_path, error_fraction=0.02)
     ei.inject_errors()
