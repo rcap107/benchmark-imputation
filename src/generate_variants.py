@@ -116,6 +116,9 @@ def prepare_grimp():
     os.makedirs('variants/grimp/data/clean', exist_ok=True)
     os.makedirs('variants/grimp/data/dirty', exist_ok=True)
 
+    print('Loading fasttext model...')
+    fasttext_model = fasttext.load_model(FASTTEXT_MODEL_PATH)
+
     for f in os.listdir(CLEAN_DS_FOLDER):
         # basename, ext = osp.splitext(f)
         src_file = osp.join(CLEAN_DS_FOLDER, f)
@@ -124,17 +127,20 @@ def prepare_grimp():
         copyfile(src_file, dst_file)
 
     for f in os.listdir(DIRTY_DS_FOLDER):
-        # basename = get_name(f)
+        basename = get_name(f)
         src_file = osp.join(DIRTY_DS_FOLDER, f)
         dst_dir = osp.join(GRIMP_FOLDER, 'data/dirty')
         dst_file = osp.join(dst_dir, f)
         copyfile(src_file, dst_file)
+        df_dirty = pd.read_csv(src_file)
+        generated_emb_file = osp.join(GRIMP_PRETRAINED_EMB_FOLDER, f'{basename}_ft.emb')
+        generate_pretrained_embeddings_grimp(df_dirty, generated_emb_file, model=fasttext_model)
 
 
-def generate_pretrained_embeddings_grimp(df, model, n_dim=300):
+def generate_pretrained_embeddings_grimp(df, generated_file, model, n_dim=300):
     # Replace '-' with spaces for sentence emb generation
     for col in df.columns:
-        df[col] = df[col].str.replace('-', ' ')
+        df[col] = df[col].astype(str).str.replace('-', ' ')
 
     # Add to each value in the dataset the column they belong to.
     for idx, col in enumerate(df.columns):
@@ -144,7 +150,7 @@ def generate_pretrained_embeddings_grimp(df, model, n_dim=300):
     unique_values = [str(_) for _ in set(df.values.ravel())]
 
     # Generate sentence vectors for all unique values
-    print('Generating token embeddings. ')
+    # print('Generating token embeddings. ')
     val_vectors = []
     missing_vals = []
     for idx, val in enumerate(unique_values):
@@ -164,7 +170,7 @@ def generate_pretrained_embeddings_grimp(df, model, n_dim=300):
 
     vector_dict['nan'] = np.zeros(n_dim)
 
-    print('Generating row embeddings.')
+    # print('Generating row embeddings.')
     tot_rows = len(vector_dict) + df.shape[0] + df.shape[1]
     row_vectors = dict()
 
@@ -176,7 +182,7 @@ def generate_pretrained_embeddings_grimp(df, model, n_dim=300):
             tmp_vec[ri] = vector
         row_vectors[idx] = np.mean(tmp_vec, 0)
 
-    print('Generating column embeddings.')
+    # print('Generating column embeddings.')
     col_vectors = dict()
 
     for idx, col in enumerate(df.columns):
@@ -186,60 +192,49 @@ def generate_pretrained_embeddings_grimp(df, model, n_dim=300):
             tmp_vec[ri] = vector
         col_vectors[col] = np.mean(tmp_vec, 0)
 
-    print('Writing embeddings on file. ')
-    with open(generated_emb_file, 'w') as fp:
-        tot_rows = len(row_vectors) + len(col_vectors) + len(vector_dict)
+    # print('Writing embeddings on file. ')
+    tot_rows = len(row_vectors) + len(col_vectors) + len(vector_dict)
+    t = tqdm(total=tot_rows)
+    with open(generated_file, 'w') as fp:
         fp.write(f'{tot_rows} {n_dim}\n')
-        for k, vec in tqdm(row_vectors.items(), total=len(row_vectors)):
+        # for k, vec in tqdm(row_vectors.items(), total=len(row_vectors)):
+        for k, vec in row_vectors.items():
             s = f'idx__{k} ' + ' '.join([str(_).strip() for _ in vec]) + '\n'
             fp.write(s)
-        for k, vec in tqdm(col_vectors.items(), total=len(col_vectors)):
+            t.update(1)
+            t.refresh()
+        # for k, vec in tqdm(col_vectors.items(), total=len(col_vectors)):
+        for k, vec in col_vectors.items():
             s = f'cid__{k.replace(" ", "-")} ' + ' '.join([str(_).strip() for _ in vec]) + '\n'
             fp.write(s)
-        for k, vec in tqdm(vector_dict.items(), total=len(vector_dict)):
+            t.update(1)
+            t.refresh()
+        # for k, vec in tqdm(vector_dict.items(), total=len(vector_dict)):
+        for k, vec in vector_dict.items():
             if k == 'nan':
                 continue
             s = f'tt__{k.replace(" ", "-")} ' + ' '.join([str(_).strip() for _ in vec]) + '\n'
             fp.write(s)
-
-
-if __name__ == '__main__':
-    # Load fasttext model once for all datasets.
-    fname = '/home/spoutnik23/PycharmProjects/GRIMP/'
-    print('Loading fasttext model...')
-    model = fasttext.load_model(fname)
-    print('Model loaded.')
-
-    # I convert all files present in data/to_pretrain
-    for data in os.listdir('data/to_pretrain'):
-        df_path = f'data/to_pretrain/{data}'
-        basename, ext = osp.splitext(data)
-        generated_emb_file = f'data/pretrained-emb/short/{basename}_ft.emb'
-        # Read dirty dataset
-        df = pd.read_csv(df_path, dtype='str')
-
-        print(f'Working on dataset {data}.')
-        generate(df, model)
-
-
-
-
-def convert_to_number(df):
-    df_copy = df.copy()
-    n_uniques = {}
-    for idx, col in enumerate(df.columns):
-        if df[col].dtype == 'O':
-            uniques = df_copy[col].unique().tolist()
-            dict_uniques = {uniques[_i]: _i for _i in range(len(uniques))}
-            df_copy[col] = df_copy[col].apply(lambda x: dict_uniques[x])
-            n_uniques[idx] = len(uniques)
-    return n_uniques
-
+            t.update(1)
+            t.refresh()
+    t.close()
 
 
 def write_hivae_version(df_dirty, df_base, args):
     # HI-VAE requires a specific error format to work take datasets as input. This function prepares all files required
     # by HI-VAE in the proper format.
+
+    def convert_to_number(df):
+        df_copy = df.copy()
+        n_uniques = {}
+        for idx, col in enumerate(df.columns):
+            if df[col].dtype == 'O':
+                uniques = df_copy[col].unique().tolist()
+                dict_uniques = {uniques[_i]: _i for _i in range(len(uniques))}
+                df_copy[col] = df_copy[col].apply(lambda x: dict_uniques[x])
+                n_uniques[idx] = len(uniques)
+        return n_uniques
+
 
     print('Writing additional files for HI-VAE.')
     input_file_name = args.input_file
@@ -297,6 +292,6 @@ def get_name(df_path):
     return basename
 
 if __name__ == '__main__':
-    prepare_holoclean()
-    prepare_misf()
+    # prepare_holoclean()
+    # prepare_misf()
     prepare_grimp()
