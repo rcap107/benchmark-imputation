@@ -5,6 +5,7 @@ CLEAN_DS_FOLDER=osp.normpath('data/clean')
 DIRTY_DS_FOLDER=osp.normpath('data/dirty')
 IMPUTED_DS_FOLDER=osp.normpath('data/imputed')
 RESULTS_PATH=osp.normpath('data/results.csv')
+FASTTEXT_MODEL_PATH='data/cc.en.300.bin'
 
 
 HOLOCLEAN_FOLDER='variants/holoclean'

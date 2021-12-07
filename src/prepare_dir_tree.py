@@ -20,6 +20,7 @@ def dirtree_misf():
 def dirtree_grimp():
     os.makedirs('variants/grimp/data/clean', exist_ok=True)
     os.makedirs('variants/grimp/data/dirty', exist_ok=True)
+    os.makedirs('variants/grimp/data/pretrained-emb', exist_ok=True)
 
 
 def dirtree_holoclean():
