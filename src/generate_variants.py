@@ -8,9 +8,14 @@ import pandas as pd
 from tqdm import tqdm
 from src.utils import *
 import json
-from shutil import copyfile
+from shutil import copyfile, make_archive
 import fasttext
 import numpy as np
+
+def make_variant_archive(dst_dir):
+    case = osp.basename(dst_dir)
+    archive_name = make_archive(osp.join(VARIANTS_FOLDER, case), 'gztar', root_dir=VARIANTS_FOLDER, base_dir=case)
+    print(f'Archive {archive_name} complete.')
 
 # HOLOCLEAN
 def prepare_holoclean():
@@ -42,6 +47,8 @@ def prepare_holoclean():
         src_file = osp.join(HOLOCLEAN_RAW_FOLDER, orig_dataset, orig_dataset + '_clean.csv')
         dst_file = osp.join(HOLOCLEAN_RAW_FOLDER, basename, orig_dataset + '_clean.csv')
         copyfile(src_file, dst_file)
+
+    make_variant_archive(HOLOCLEAN_FOLDER)
 
 def prepare_clean_holoclean(df_path):
     basename = get_name(df_path)
@@ -111,6 +118,9 @@ def prepare_misf():
         dst_file = osp.join(dst_dir, f)
         copyfile(src_file, dst_file)
 
+    make_variant_archive(MISF_FOLDER)
+
+
 # GRIMP
 def prepare_grimp():
     os.makedirs('variants/grimp/data/clean', exist_ok=True)
@@ -136,6 +146,7 @@ def prepare_grimp():
         generated_emb_file = osp.join(GRIMP_PRETRAINED_EMB_FOLDER, f'{basename}_ft.emb')
         generate_pretrained_embeddings_grimp(df_dirty, generated_emb_file, model=fasttext_model)
 
+    make_variant_archive(GRIMP_FOLDER)
 
 def generate_pretrained_embeddings_grimp(df, generated_file, model, n_dim=300):
     # Replace '-' with spaces for sentence emb generation
@@ -292,6 +303,6 @@ def get_name(df_path):
     return basename
 
 if __name__ == '__main__':
-    # prepare_holoclean()
-    # prepare_misf()
+    prepare_holoclean()
+    prepare_misf()
     prepare_grimp()
