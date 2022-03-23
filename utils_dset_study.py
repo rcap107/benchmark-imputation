@@ -22,11 +22,13 @@ class DatasetCase:
             except IndexError:
                 return str(val)
 
-    def __init__(self, path, tgt_dir, convert_columns=None, df=None):
+    def __init__(self, path, tgt_dir, convert_columns=None, df=None, verbose=False):
         self.path = path
         self.name, _ = os.path.splitext(path)
         self.imputation_method = 'ground-truth'
-        print(f'Adding dataset {self.name}')
+        self.computed_fraction_missing = 0.0
+        if verbose:
+            print(f'Adding dataset {self.name}')
         # Threshold for null hypotesis in the chi2 test.
         self.null_hyp = 0.05
         # Quantile to define "rare" and "frequent" values.
@@ -36,7 +38,7 @@ class DatasetCase:
         if df is not None:
             self.df = df
         else:
-            self.df = pd.read_csv(osp.join(tgt_dir, self.path))
+            self.df = pd.read_csv(osp.join(tgt_dir, self.path), engine='python')
             for i, col in enumerate(self.df.columns):
                 self.df[col] = self.df[col].apply(self._clean_str)
                 self.df[col] = pd.to_numeric(self.df[col], errors='ignore')
@@ -60,7 +62,7 @@ class DatasetCase:
         self.quantile50 = {col: None for col in self.columns}
 
         self.avg_redundancy = 0
-        self.frequencies_by_value = None
+        self.all_frequencies_by_value = None
 
         self.stat_by_col()
         self.overall_stats()
@@ -79,6 +81,7 @@ class DatasetCase:
         self.all_frequencies_by_value = pd.Series(counts_all)
         self.cat_frequencies_by_value = pd.Series(counts_cat)
         self.avg_redundancy = self.all_frequencies_by_value.mean()
+        self.normalized_redundancy = self.avg_redundancy/len(self.all_frequencies_by_value)
 
     def find_rare_values(self, plot=True):
         self.q_rare = 0.9
@@ -107,24 +110,25 @@ class DatasetCase:
         # if plot:
         #     self.plot_freq_histogram()
 
-    def print_stats(self):
+    def print_stats(self, by_col=False):
         # Overall stats
         print(f'Dataset name:{self.name}')
         print(f'Rows: {self.num_rows} - Columns: {self.num_columns}')
 
         print('Quantiles. x% of values have frequency lower than the x-th quantile.')
-        print(f'20% quantile: {self.frequencies_by_value.quantile(.2):.1f}')
-        print(f'50% quantile: {self.frequencies_by_value.quantile(.5):.1f}')
-        print(f'80% quantile: {self.frequencies_by_value.quantile(.8):.1f}')
-        print(f'90% quantile: {self.frequencies_by_value.quantile(.9):.1f}')
+        print(f'20% quantile: {self.all_frequencies_by_value.quantile(.2):.1f}')
+        print(f'50% quantile: {self.all_frequencies_by_value.quantile(.5):.1f}')
+        print(f'80% quantile: {self.all_frequencies_by_value.quantile(.8):.1f}')
+        print(f'90% quantile: {self.all_frequencies_by_value.quantile(.9):.1f}')
         print(f'Average redundancy over the full dataset: {self.avg_redundancy:.2f}')
 
         # Stats by column
-        print(f'{"Column":<20}{"Uniques":>8}{"Avg freq":>10}{"Q50":>10}')
+        if by_col:
+            print(f'{"Column":<20}{"Uniques":>8}{"Avg freq":>10}{"Q50":>10}')
 
-        for col in self.columns:
-            k, v = col, self.frequencies_by_col[col]
-            print(f'{k:<20}{len(v):>8}{self.redundacy_by_col[col]:>10.2f}{self.quantile50[col]:>10.2f}')
+            for col in self.columns:
+                k, v = col, self.frequencies_by_col[col]
+                print(f'{k:<20}{len(v):>8}{self.redundacy_by_col[col]:>10.2f}{self.quantile50[col]:>10.2f}')
 
     def get_stat_by_col(self, col, stat):
         if stat == 'frequency':
@@ -169,7 +173,7 @@ class DatasetCase:
         g = sns.catplot(data=summary, x='index', y='count', hue='case', kind='bar')
         plt.xticks(rotation=90)
         plt.title(f'Distribution of rare/frequent values. Dataset: {self.imputation_method}')
-        g.tight_layout()
+        # g.tight_layout()
         plt.show()
 
 
@@ -246,7 +250,7 @@ class Dataset:
         '''
         return self.datasets[case][idx]
 
-    def compare_clean_dirty(self):
+    def compare_clean_dirty(self, df_orig=None, df_dirty=None):
         '''
         This function checks
         :return:
@@ -380,8 +384,9 @@ class Dataset:
                 concat = pd.concat([freqs_melted, full_summary_melted])
                 # sns.barplot(data=full_summary_melted, x='index', y=['variable'], hue='dataset')
                 plt.figure(figsize=(10,8))
-                sns.catplot(kind='bar',data=concat, x='index', y='value', hue='dataset')
+                ax  = sns.catplot(kind='bar',data=concat, x='index', y='value', hue='dataset')
                 plt.xticks(rotation=45)
+                ax.legend(facecolor='white')
                 plt.show()
             print(full_summary)
 
@@ -393,7 +398,7 @@ class Dataset:
 
             pass
 
-def measure_imputation_accuracy(ds_orig: DatasetCase, ds_dirty: DirtyDatasetCase, ds_imp: ImputedDatasetCase):
+def measure_imputation_accuracy(ds_orig: DatasetCase, ds_dirty: DirtyDatasetCase, ds_imp: ImputedDatasetCase, verbose=False):
     target_columns = ds_dirty.target_columns
 
     total_imputations_by_col = {col:0 for col in target_columns}
@@ -403,55 +408,165 @@ def measure_imputation_accuracy(ds_orig: DatasetCase, ds_dirty: DirtyDatasetCase
     df_dirty = ds_dirty.df
     df_imp = ds_imp.df
 
+    num_imp_true = {col:[] for col in ds_orig.numerical_columns}
+    num_imp_pred = {col:[] for col in ds_orig.numerical_columns}
+
+    did_not_predict = []
+
     for idx, row in ds_dirty.null_values.iterrows():
-        for col in target_columns:
+        for col in ds_orig.categorical_columns:
             if pd.isna(df_dirty.loc[idx, col]):
                 true_value = df_orig.loc[idx, col]
                 imputed_value = df_imp.loc[idx, col]
                 if true_value == imputed_value:
                     correct_imputations_by_col[col] += 1
                 total_imputations_by_col[col] += 1
+        for col in ds_orig.numerical_columns:
+            if pd.isna(df_dirty.loc[idx, col]):
+                if pd.isna(df_imp.loc[idx, col]):
+                    did_not_predict.append([idx,col])
+                    continue
+                num_imp_true[col].append(df_orig.loc[idx, col])
+                num_imp_pred[col].append(df_imp.loc[idx, col])
 
     acc_dict = {}
-    for col in df_orig.columns:
+    for col in ds_orig.categorical_columns:
         if col in target_columns:
             acc_dict[col] = correct_imputations_by_col[col]/total_imputations_by_col[col]
         else:
             acc_dict[col] = 0
+    for col in ds_orig.numerical_columns:
+        if col in target_columns:
+            acc_dict[col] = mean_squared_error(num_imp_true[col], num_imp_pred[col], )
+        else:
+            acc_dict[col] = 0
 
-
-    header = f'{"Column":^30}{"Score":^16}{"Correct":^8}{"Tot miss":^8}'
-    print(header)
-    for col in acc_dict:
-        s = f'{col:^30}{acc_dict[col]:>16.4}{correct_imputations_by_col[col]:^8}{total_imputations_by_col[col]:^8}'
-        print(s)
-    acc = sum(list(correct_imputations_by_col.values()))/sum(list(total_imputations_by_col.values()))
-    print(f'Imputation accuracy: {acc:.4f}')
-
+    if len(ds_orig.categorical_columns) > 0:
+        acc = sum(list(correct_imputations_by_col.values()))/sum(list(total_imputations_by_col.values()))
+    else:
+        acc = 0
+    if len(ds_orig.numerical_columns) > 0:
+        average_rmse = sum([acc_dict[col] for col in ds_orig.numerical_columns]) / len(ds_orig.numerical_columns)
+    else:
+        average_rmse = 0
     res_dict = {
         'ds_name': ds_dirty.name,
         'imputation_method': ds_imp.imputation_method,
         'frac_missing': ds_dirty.computed_fraction_missing,
         'avg_acc': acc,
+        'avg_rmse': average_rmse,
         'acc_dict': acc_dict
     }
+    if verbose:
+        header = f'{"Column":^30}{"Score":^16}{"Correct":^8}{"Tot miss":^8}'
+        print(header)
+        for col in acc_dict:
+            if col in ds_orig.categorical_columns:
+                s = f'{col:^30}{acc_dict[col]:>16.4}{correct_imputations_by_col[col]:^8}{total_imputations_by_col[col]:^8}'
+            else:
+                s = f'{col:^30}{acc_dict[col]:>16.4}{"0":^8}{total_imputations_by_col[col]:^8}'
+            print(s)
+        print(f'Imputation accuracy: {acc:.4f}')
 
     return res_dict
 
 
 if __name__ == '__main__':
-    dataset_name = 'bikes-dekho'
+    dataset_name = 'adultsample10'
     clean_dir = 'data/clean'
     dirty_dir = 'data/dirty/'
     imp_dir = 'data/imputed'
 
-    ds = Dataset(dataset_name)
-    ds.add_dataset('orig', f'{dataset_name}.csv', clean_dir)
-    ds.add_dataset('dirty', f'{dataset_name}_all_columns_20.csv', dirty_dir)
-    ds.add_dataset('imp', f'{dataset_name}_all_columns_20_imputed_grimp.csv', imp_dir)
-    ds.add_dataset('imp', f'{dataset_name}_all_columns_20_imputed_misf.csv', imp_dir)
-    ds.add_dataset('imp', f'{dataset_name}_all_columns_20_imputed_holo.csv', imp_dir)
+    datasets = ['adultsample10',
+            'australian',
+            'contraceptive',
+            'credit',
+            'flare',
+            # 'fodorszagats',
+            'imdb',
+            'mammogram',
+            'tax5000trimmed',
+            'thoracic',
+            # 'tictactoe'
+            ]
 
-    for imp in ds.datasets['imp']:
-        print(imp.name)
-        ds.measure_imputation_accuracy(imp.df)
+    labels = ['Adult',
+                'Australian',
+                'Contraceptive',
+                'Credit',
+                'Flare',
+                # 'fodorszagats',
+                'IMDB',
+                'Mammogram',
+                'Tax',
+                'Thoracic',
+                # 'tictactoe'
+                ]
+
+    # ds = Dataset(dataset_name)
+    # ds.add_dataset('orig', f'{dataset_name}.csv', clean_dir)
+    # ds.add_dataset('dirty', f'{dataset_name}_allcolumns_50.csv', dirty_dir)
+
+    # ds.print_all_stats()
+    fig = plt.figure(figsize=(8, 6))
+
+    ax = plt.gca()
+    dset_info = {
+           'name': [],
+           'num_rows': [],
+           'tot_columns': [],
+           'cat_columns': [],
+           'num_columns': [],
+           'dist_values': [],
+           'avg_redundancy': [],
+           'norm_redundancy': [],
+       }
+
+    clean_datasets = {}
+    for _, dataset_name in enumerate(datasets):
+        dset_clean = DatasetCase(dataset_name+'.csv', tgt_dir=clean_dir)
+        clean_datasets[dataset_name] = dset_clean
+        dset_info['name'].append(dataset_name)
+        dset_info['num_rows'].append(dset_clean.num_rows)
+        dset_info['tot_columns'].append(dset_clean.num_columns)
+        dset_info['cat_columns'].append(len(dset_clean.categorical_columns))
+        dset_info['num_columns'].append(len(dset_clean.numerical_columns))
+        dset_info['dist_values'].append(len(dset_clean.all_frequencies_by_value))
+        dset_info['avg_redundancy'].append(dset_clean.avg_redundancy)
+        dset_info['norm_redundancy'].append(dset_clean.normalized_redundancy)
+
+    df_info = pd.DataFrame().from_dict(dset_info)
+
+    df_info.to_csv('dfinfo.csv', index=False)
+
+    for didx, dataset_name in enumerate(datasets):
+        print(dataset_name)
+        dset_clean = DatasetCase(dataset_name+'.csv', tgt_dir=clean_dir)
+        dirty_dsets = {}
+        dirty_dsets['00'] = dset_clean
+        for frac in ['05', '20', '50']:
+            dirty_dsets[frac] = DirtyDatasetCase(f'{dataset_name}_allcolumns_{frac}.csv', tgt_dir=dirty_dir)
+
+        dict_avg_redundancy =  {}
+        dict_norm_redundancy =  {}
+        for key, dset in dirty_dsets.items():
+            dict_avg_redundancy[key] = dset.avg_redundancy
+            dict_norm_redundancy[key] = dset.normalized_redundancy
+            print(key, dset.avg_redundancy, dset.computed_fraction_missing)
+
+        # plt.plot(list(dict_norm_redundancy.values()), label=dataset_name)
+        ax.plot(list(dict_avg_redundancy.values()), label=labels[didx])
+        # ax.xticks(rotation=90)
+        plt.xticks(range(len(dict_avg_redundancy.keys())), [int(x) for x in dict_avg_redundancy.keys()])
+        # ax.set_xticks(range(len(dict_avg_redundancy.keys())),list(dict_avg_redundancy.keys()))
+        # plt.show()
+    plt.legend()
+    plt.xlabel('Error fraction')
+    plt.ylabel('Average redundancy')
+    plt.title('Average redundancy as function of the error fraction')
+    plt.tight_layout()
+    fig.savefig('avg_redundancy.png')
+    # plt.show()
+
+
+print()
