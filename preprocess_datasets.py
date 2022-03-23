@@ -14,19 +14,21 @@ if __name__ == '__main__':
     dirtree.dirtree_grimp()
     dirtree.dirtree_holoclean()
     dirtree.dirtree_misf()
-    error_cases = [0.02, 0.1, 0.2, 0.4, 0.6]
+    error_cases = [0.05, 0.2]
 
     # Prepare dirty datasets
-    for clean_dataset in os.listdir(CLEAN_DS_FOLDER):
+    for clean_dataset in sorted(os.listdir(CLEAN_DS_FOLDER)):
         ds_name, ext = osp.splitext(clean_dataset)
         ds_path = osp.join(CLEAN_DS_FOLDER, clean_dataset)
-
+        if osp.isdir(ds_path):
+            print(f'{ds_path} is a directory. Skipping.')
+            continue
         for ef in error_cases:
-            ei = error_injection.ErrorInjector(ds_name, ds_path, error_fraction=ef, target_all_columns=True, seed=None)
+            ei = error_injection.ErrorInjector(ds_name, ds_path, error_fraction=ef, target_all_columns=True, strategy='low_freq', seed=None)
             ei.inject_errors()
             ei.write_dirty_dataset_on_file()
 
     # Prepare variants
-    generate_variants.prepare_holoclean()
+    # generate_variants.prepare_holoclean()
     generate_variants.prepare_misf()
     generate_variants.prepare_grimp()
