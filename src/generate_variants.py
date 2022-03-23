@@ -12,13 +12,17 @@ from shutil import copyfile, make_archive
 import fasttext
 import numpy as np
 
+
 def make_variant_archive(dst_dir):
     case = osp.basename(dst_dir)
+    print('Preparing archive.')
     archive_name = make_archive(osp.join(VARIANTS_FOLDER, case), 'gztar', root_dir=VARIANTS_FOLDER, base_dir=case)
     print(f'Archive {archive_name} complete.')
 
+
 # HOLOCLEAN
 def prepare_holoclean():
+    print('### ### ### Preparing HOLOCLEAN files ### ### ###')
     os.makedirs('variants/holoclean/testdata/raw', exist_ok=True)
     os.makedirs('variants/holoclean/dump', exist_ok=True)
     os.makedirs('variants/holoclean/meta_data', exist_ok=True)
@@ -26,8 +30,13 @@ def prepare_holoclean():
     for f in os.listdir(CLEAN_DS_FOLDER):
         basename, ext = osp.splitext(f)
         os.makedirs(osp.join(HOLOCLEAN_RAW_FOLDER, basename), exist_ok=True)
-        tgt_dir = osp.join(CLEAN_DS_FOLDER,f)
-        prepare_clean_holoclean(tgt_dir)
+        df_path = osp.join(CLEAN_DS_FOLDER,f)
+        if osp.isdir(df_path):
+            print(f'{df_path} is a directory. Skipping.')
+            print()
+            continue
+        else:
+            prepare_clean_holoclean(df_path)
 
     for f in os.listdir(DIRTY_DS_FOLDER):
         basename = get_name(f)
@@ -60,14 +69,14 @@ def prepare_clean_holoclean(df_path):
     with open(gt_path, 'w') as fp:
         header = 'tid,attribute,correct_val\n'
         fp.write(header)
-        for rid, row in tqdm(df.iterrows(), total=len(df)):
+        for rid, row in tqdm(df.iterrows(), total=len(df), desc=f'{basename:<20}'):
             for col in df.columns:
                 s = f'{rid},{col},{df.loc[rid, col]}\n'
                 fp.write(s)
 
 def prepare_metadata_holoclean(df_raw_path, numerical_columns=None):
     '''
-    The run_holoclean.py script requires info to be present in the meta_data.py script.
+    The run_holoclean.py script requires info_imputed to be present in the meta_data.py script.
     Metadata are hardcoded as dictionaries in the script.
 
     This function outputs a json file that should be copied in the metadaa file.
@@ -101,18 +110,24 @@ def prepare_metadata_holoclean(df_raw_path, numerical_columns=None):
 
 # MISSFOREST
 def prepare_misf():
+    print('### ### ### Preparing MISSFOREST files ### ### ###')
     os.makedirs('variants/misf/data/clean', exist_ok=True)
     os.makedirs('variants/misf/data/dirty', exist_ok=True)
 
     for f in os.listdir(CLEAN_DS_FOLDER):
         # basename, ext = osp.splitext(f)
         src_file = osp.join(CLEAN_DS_FOLDER, f)
+        if osp.isdir(src_file):
+            print(f'{src_file} is a directory. Skipping.')
+            continue
         dst_dir = osp.join(MISF_FOLDER, 'data/clean')
         dst_file = osp.join(dst_dir, f)
         copyfile(src_file, dst_file)
 
     for f in os.listdir(DIRTY_DS_FOLDER):
         # basename = get_name(f)
+        if osp.isdir(f):
+            continue
         src_file = osp.join(DIRTY_DS_FOLDER, f)
         dst_dir = osp.join(MISF_FOLDER, 'data/dirty')
         dst_file = osp.join(dst_dir, f)
@@ -123,8 +138,11 @@ def prepare_misf():
 
 # GRIMP
 def prepare_grimp():
+    print('### ### ### Preparing GRIMP files ### ### ###')
+
     os.makedirs('variants/grimp/data/clean', exist_ok=True)
     os.makedirs('variants/grimp/data/dirty', exist_ok=True)
+    os.makedirs('variants/grimp/data/pretrained-emb', exist_ok=True)
 
     print('Loading fasttext model...')
     fasttext_model = fasttext.load_model(FASTTEXT_MODEL_PATH)
@@ -132,10 +150,14 @@ def prepare_grimp():
     for f in os.listdir(CLEAN_DS_FOLDER):
         # basename, ext = osp.splitext(f)
         src_file = osp.join(CLEAN_DS_FOLDER, f)
+        if osp.isdir(src_file):
+            print(f'{src_file} is a directory. Skipping.')
+            continue
         dst_dir = osp.join(GRIMP_FOLDER, 'data/clean')
         dst_file = osp.join(dst_dir, f)
         copyfile(src_file, dst_file)
 
+    t = tqdm(total=len(os.listdir(DIRTY_DS_FOLDER)), desc='GRIMP pre-trained: ')
     for f in os.listdir(DIRTY_DS_FOLDER):
         basename = get_name(f)
         src_file = osp.join(DIRTY_DS_FOLDER, f)
@@ -145,8 +167,12 @@ def prepare_grimp():
         df_dirty = pd.read_csv(src_file)
         generated_emb_file = osp.join(GRIMP_PRETRAINED_EMB_FOLDER, f'{basename}_ft.emb')
         generate_pretrained_embeddings_grimp(df_dirty, generated_emb_file, model=fasttext_model)
+        t.update(1)
+        t.display()
+    print()
 
     make_variant_archive(GRIMP_FOLDER)
+
 
 def generate_pretrained_embeddings_grimp(df, generated_file, model, n_dim=300):
     # Replace '-' with spaces for sentence emb generation
@@ -155,7 +181,13 @@ def generate_pretrained_embeddings_grimp(df, generated_file, model, n_dim=300):
 
     # Add to each value in the dataset the column they belong to.
     for idx, col in enumerate(df.columns):
-        df[col] = df[col].apply(lambda x: f'c{idx}_{x}')
+        try:
+            # Check if the column is numeric, if it is round to 8th decimal place.
+            df[col] = df[col].astype(float).round(8)
+            df[col] = df[col].apply(lambda x: f'c{idx}_{x}')
+        except ValueError:
+            # If not numeric, just treat as string.
+            df[col] = df[col].apply(lambda x: f'c{idx}_{x}')
 
     # Extract all unique values
     unique_values = [str(_) for _ in set(df.values.ravel())]
@@ -205,30 +237,23 @@ def generate_pretrained_embeddings_grimp(df, generated_file, model, n_dim=300):
 
     # print('Writing embeddings on file. ')
     tot_rows = len(row_vectors) + len(col_vectors) + len(vector_dict)
-    t = tqdm(total=tot_rows)
+    # t = tqdm(total=tot_rows)
     with open(generated_file, 'w') as fp:
         fp.write(f'{tot_rows} {n_dim}\n')
         # for k, vec in tqdm(row_vectors.items(), total=len(row_vectors)):
         for k, vec in row_vectors.items():
             s = f'idx__{k} ' + ' '.join([str(_).strip() for _ in vec]) + '\n'
             fp.write(s)
-            t.update(1)
-            t.refresh()
         # for k, vec in tqdm(col_vectors.items(), total=len(col_vectors)):
         for k, vec in col_vectors.items():
             s = f'cid__{k.replace(" ", "-")} ' + ' '.join([str(_).strip() for _ in vec]) + '\n'
             fp.write(s)
-            t.update(1)
-            t.refresh()
         # for k, vec in tqdm(vector_dict.items(), total=len(vector_dict)):
         for k, vec in vector_dict.items():
             if k == 'nan':
                 continue
             s = f'tt__{k.replace(" ", "-")} ' + ' '.join([str(_).strip() for _ in vec]) + '\n'
             fp.write(s)
-            t.update(1)
-            t.refresh()
-    t.close()
 
 
 def write_hivae_version(df_dirty, df_base, args):
@@ -302,7 +327,8 @@ def get_name(df_path):
     basename, ext = osp.splitext(osp.basename(df_path))
     return basename
 
+
 if __name__ == '__main__':
-    prepare_holoclean()
-    prepare_misf()
+    # prepare_holoclean()
+    # prepare_misf()
     prepare_grimp()
