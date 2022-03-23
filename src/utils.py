@@ -11,8 +11,11 @@ FASTTEXT_MODEL_PATH=osp.normpath('data/cc.en.300.bin')
 
 HOLOCLEAN_FOLDER=osp.normpath('variants/holoclean')
 HOLOCLEAN_RAW_FOLDER= osp.normpath('variants/holoclean/testdata/raw')
+HOLOCLEAN_RAW_RESULTS_FOLDER= osp.normpath('raw_results/holo/')
+
 GRIMP_FOLDER=osp.normpath('variants/grimp')
 GRIMP_PRETRAINED_EMB_FOLDER=osp.normpath('variants/grimp/data/pretrained-emb')
+
 HIVAE_FOLDER=osp.normpath('variants/hivae')
 MISF_FOLDER=osp.normpath('variants/misf')
 VARIANTS_FOLDER=osp.normpath('variants')
