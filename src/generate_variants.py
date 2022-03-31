@@ -329,6 +329,7 @@ def get_name(df_path):
 
 
 if __name__ == '__main__':
-    # prepare_holoclean()
+    prepare_holoclean()
     # prepare_misf()
-    prepare_grimp()
+    # prepare_grimp()
+#

@@ -8,6 +8,7 @@ from scipy.stats import chi2_contingency
 import seaborn as sns
 from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
+from copy import deepcopy
 
 
 class DatasetCase:
@@ -214,22 +215,25 @@ class Dataset:
         self.convert_columns = convert_columns
 
     def add_dataset(self, case, dataset_name, tgt_dir):
+        new_ds = None
         if case == 'dirty':
             if len(self.datasets[case])>0:
                 print('Only 1 dirty dataset allowed per run. Skipping insertion.')
                 # raise  ValueError('Only 1 dirty dataset allowed per run.')
             else:
-                dirty_ds = DirtyDatasetCase(dataset_name, tgt_dir, self.convert_columns)
-                self.datasets[case].append(dirty_ds)
-                self.target_columns = dirty_ds.target_columns
-                self.null_values = dirty_ds.null_values
+                new_ds = DirtyDatasetCase(dataset_name, tgt_dir, self.convert_columns)
+                self.target_columns = new_ds.target_columns
+                self.null_values = new_ds.null_values
         elif case == 'imp':
-            self.datasets[case].append(ImputedDatasetCase(dataset_name, tgt_dir, self.convert_columns))
+            new_ds = ImputedDatasetCase(dataset_name, tgt_dir, self.convert_columns)
         else:
             if len(self.datasets[case])>0:
                 raise  ValueError('Only 1 clean dataset allowed per run.')
-            self.datasets[case].append(DatasetCase(dataset_name, tgt_dir, self.convert_columns))
+            new_ds = DatasetCase(dataset_name, tgt_dir, self.convert_columns)
+        self.datasets[case].append(new_ds)
         self.categorical_columns = self.datasets['orig'][0].categorical_columns
+        return new_ds
+
 
     def get_all_datasets(self):
         ds_list = []
@@ -344,8 +348,11 @@ class Dataset:
         df_orig = self.datasets['orig'][0].df
         ds_imputed = self.datasets['imp']
 
-        for col in self.categorical_columns:
-            full_summary = pd.DataFrame(columns=['total', 'correct', 'wrong', 'ratio', 'frequency', '1-frequency', 'error2'])
+        summary_all_columns = pd.DataFrame()
+        selected_columns = ['Risk1Yr', 'PRE8', 'PRE30']
+        # selected_columns = self.categorical_columns[:]
+        for col in selected_columns:
+            full_summary = pd.DataFrame(columns=['total', 'correct', 'wrong', 'ratio','frequency', '1-frequency', 'error2'])
             true_imputations = df_orig[col].loc[self.null_values[col]]
             true_imputations_by_value = df_orig.loc[self.null_values[col], col].value_counts()
             freqs = pd.DataFrame(columns=['frequency', 'ratio', 'dataset'])
@@ -365,11 +372,12 @@ class Dataset:
                 incorrect_imputations_by_value = df_orig.loc[self.null_values[col], col].loc[v_incorrect].value_counts()
                 # incorrect_imputations_by_value = df_orig.iloc[incorrect_imputations[col]].value_counts(col)
                 frac_wrong = incorrect_imputations_by_value/true_imputations_by_value
-                dd = pd.DataFrame(columns=['dataset','total', 'correct', 'wrong', 'ratio', 'frequency', '1-frequency', 'error2'])
+                dd = pd.DataFrame(columns=['dataset','total', 'correct', 'wrong', 'ratio', 'ratio_correct', 'frequency', '1-frequency', 'error2'])
                 dd['total'] = true_imputations_by_value
                 dd['correct'] = correct_imputations_by_value
                 dd['wrong'] = incorrect_imputations_by_value
                 dd['ratio'] = frac_wrong
+                dd['ratio_correct'] = 1-frac_wrong
                 dd = dd.fillna(0)
                 dd['frequency'] = true_imputations_by_value/len(true_imputations)
                 dd['1-frequency'] = 1-dd['frequency']
@@ -382,21 +390,31 @@ class Dataset:
                 freqs_melted = pd.melt(freqs.reset_index(), id_vars=['index', 'dataset'], value_vars=['ratio'])
                 full_summary_melted = pd.melt(full_summary.reset_index(), id_vars=['index', 'dataset'], value_vars=['ratio'])
                 concat = pd.concat([freqs_melted, full_summary_melted])
-                # sns.barplot(data=full_summary_melted, x='index', y=['variable'], hue='dataset')
-                plt.figure(figsize=(10,8))
-                ax  = sns.catplot(kind='bar',data=concat, x='index', y='value', hue='dataset')
-                plt.xticks(rotation=45)
-                ax.legend(facecolor='white')
-                plt.show()
+                concat['column'] = col
+                with sns.plotting_context('talk', font_scale=1.5):
+                    fig = plt.figure(figsize=(10,8))
+                    ax = fig.gca()
+                    sns.barplot(ax=ax,data=concat, x='index', y='value', hue='dataset').set(
+                        ylabel='% of incorrect imputations', xlabel='Attribute value',title=col
+                    )
+                    plt.tight_layout()
+                    plt.show()
+                # ax  = sns.catplot(kind='bar',data=concat, x='index', y='value', hue='dataset')
+                # plt.xticks(rotation=45)
+                # # ax.legend(facecolor='white')
+                # plt.show()
+                summary_all_columns = pd.concat([summary_all_columns, concat])
             print(full_summary)
 
-        def column_stats_imp_acc(self):
-            '''
-            This function relates the imputation accuracy of columns with some of their stats.
-            :return:
-            '''
+        print()
+        with sns.plotting_context('talk', font_scale=1.5):
 
-            pass
+            g = sns.catplot(data=summary_all_columns, x='index', y='value', hue='dataset', col='column',
+                            kind='bar', palette=sns.color_palette('tab10'), height=7)
+            plt.tight_layout()
+            plt.show()
+
+
 
 def measure_imputation_accuracy(ds_orig: DatasetCase, ds_dirty: DirtyDatasetCase, ds_imp: ImputedDatasetCase, verbose=False):
     target_columns = ds_dirty.target_columns
@@ -567,6 +585,7 @@ if __name__ == '__main__':
     plt.tight_layout()
     fig.savefig('avg_redundancy.png')
     # plt.show()
+
 
 
 print()

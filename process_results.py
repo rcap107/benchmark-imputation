@@ -64,6 +64,8 @@ if __name__ == '__main__':
             continue
         orig_basename = osp.basename(orig_dataset)
         dsname, ext = osp.splitext(orig_basename)
+        if dsname != 'mammogram':
+            continue
 
         ds = Dataset(dsname)
 
